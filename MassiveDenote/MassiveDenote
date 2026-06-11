@@ -1,0 +1,62 @@
+' iLogic Script para "Degradar" (Demote) masivamente piezas individuales a subensamblajes
+Dim oDoc As AssemblyDocument = ThisApplication.ActiveDocument
+Dim oDef As AssemblyComponentDefinition = oDoc.ComponentDefinition
+
+' 1. Verificar que el ensamble principal esté guardado para tener una ruta base de guardado
+Dim oFolder As String = System.IO.Path.GetDirectoryName(oDoc.FullFileName)
+If oFolder = "" Then
+    MsgBox("Por favor, guarda el ensamblaje principal primero antes de ejecutar el script.", vbExclamation, "Atención")
+    Exit Sub
+End If
+
+' 2. Crear una lista para aislar las piezas de primer nivel y evitar conflictos al modificar la colección
+Dim occList As New List(Of ComponentOccurrence)
+For Each oOcc As ComponentOccurrence In oDef.Occurrences
+    If oOcc.DefinitionDocumentType = DocumentTypeEnum.kPartDocumentObject Then
+        occList.Add(oOcc)
+    End If
+Next
+
+If occList.Count = 0 Then
+    MsgBox("No se encontraron piezas individuales en la raíz del ensamblaje.", vbInformation, "Info")
+    Exit Sub
+End If
+
+Dim count As Integer = 1
+For Each oOcc In occList
+    Try
+        ' Obtener la ruta de la pieza original
+        Dim partPath As String = oOcc.ReferencedDocumentDescriptor.FullDocumentName
+        Dim partName As String = System.IO.Path.GetFileNameWithoutExtension(partPath)
+        
+        ' Generar el nombre del nuevo ensamblaje (se guardará junto al ensamble principal)
+        Dim newAsmName As String = oFolder & "\" & partName & "_Demoted_" & count & ".iam"
+        
+        ' 3. Crear un nuevo documento de ensamblaje usando la plantilla estándar (invisible en la interfaz)
+        Dim newAsmDoc As AssemblyDocument = ThisApplication.Documents.Add(DocumentTypeEnum.kAssemblyDocumentObject, , False)
+        Dim newAsmDef As AssemblyComponentDefinition = newAsmDoc.ComponentDefinition
+        
+        ' 4. Colocar la pieza original en el origen del nuevo subensamblaje
+        Dim oMatrix As Matrix = ThisApplication.TransientGeometry.CreateMatrix()
+        Dim newOcc As ComponentOccurrence = newAsmDef.Occurrences.Add(partPath, oMatrix)
+        
+        ' Fijar (Ground) la pieza dentro de su nuevo subensamblaje para que no flote
+        newOcc.Grounded = True
+        
+        ' Guardar el nuevo subensamblaje
+        newAsmDoc.SaveAs(newAsmName, False)
+        
+        ' 5. Sustituir la pieza en el ensamblaje principal por el nuevo subensamblaje
+        ' El parámetro 'False' asegura que SOLO se sustituya esta ocurrencia específica y no todas las copias de la pieza
+        oOcc.Replace(newAsmName, False)
+        
+        ' Cerrar el documento del subensamblaje en memoria
+        newAsmDoc.Close()
+        
+        count += 1
+    Catch ex As Exception
+        MsgBox("Error al procesar la pieza: " & oOcc.Name & vbCrLf & ex.Message, vbCritical, "Error")
+    End Try
+Next
+
+MsgBox("Proceso completado. Se han degradado y sustituido " & (count - 1) & " piezas.", vbInformation, "Éxito")
