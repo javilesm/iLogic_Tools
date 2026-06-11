@@ -1,0 +1,80 @@
+' Script de iLogic para crear piezas simplificadas a partir de un ensamblaje n veces
+Dim oApp As Inventor.Application = ThisApplication
+Dim oAssyDoc As Inventor.AssemblyDocument
+
+' Validar que el documento activo sea un ensamblaje
+If oApp.ActiveDocument.DocumentType <> DocumentTypeEnum.kAssemblyDocumentObject Then
+    MessageBox.Show("Este script debe ejecutarse desde un ensamblaje (.iam).", "Error de tipo de archivo", MessageBoxButtons.OK, MessageBoxIcon.Error)
+    Return
+End If
+
+oAssyDoc = oApp.ActiveDocument
+Dim assyPath As String = oAssyDoc.FullDocumentName
+
+' Validar que el ensamblaje esté guardado
+If assyPath = "" Then
+    MessageBox.Show("Guarda el ensamblaje original antes de ejecutar el script.", "Ensamblaje sin guardar")
+    Return
+End If
+
+' 1. Pedir al usuario la cantidad de iteraciones (n veces)
+Dim nString As String = InputBox("¿Cuántas piezas simplificadas deseas generar?", "Cantidad de iteraciones", "1")
+Dim n As Integer
+If Not Integer.TryParse(nString, n) OrElse n <= 0 Then
+    MessageBox.Show("Se ha introducido una cantidad no válida. Cancelando operación.", "Operación Cancelada")
+    Return
+End If
+
+' 2. Pedir al usuario el nombre base (prefijo) para los archivos
+Dim baseName As String = InputBox("Ingresa el prefijo para los archivos generados (ej. SIDEWALL):", "Nombre Base", "SIDEWALL")
+If String.IsNullOrWhiteSpace(baseName) Then
+    Return
+End If
+
+' 3. Pedir al usuario el directorio de salida
+Dim folderDialog As New System.Windows.Forms.FolderBrowserDialog()
+folderDialog.Description = "Selecciona la carpeta de destino para las piezas simplificadas"
+' Opcional: Que el buscador inicie en la misma carpeta del ensamblaje por comodidad
+folderDialog.SelectedPath = System.IO.Path.GetDirectoryName(assyPath)
+
+If folderDialog.ShowDialog() <> System.Windows.Forms.DialogResult.OK Then
+    MessageBox.Show("Operación cancelada por el usuario al no seleccionar ruta.", "Cancelado", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+    Return
+End If
+
+Dim folderPath As String = folderDialog.SelectedPath
+
+' Barra de progreso en la parte inferior de Inventor
+oApp.StatusBarText = "Generando piezas simplificadas..."
+
+' Bucle para generar n cantidad de piezas
+For i As Integer = 1 To n
+    ' Formatear el número con dos dígitos (ej. 01, 02, 03)
+    Dim index As String = i.ToString("D2")
+    Dim newFileName As String = folderPath & "\" & baseName & "_" & index & ".ipt"
+    
+    ' Crear un nuevo documento de pieza de forma invisible (False) para mayor velocidad
+    Dim oNewPartDoc As Inventor.PartDocument
+    oNewPartDoc = oApp.Documents.Add(DocumentTypeEnum.kPartDocumentObject, oApp.FileManager.GetTemplateFile(DocumentTypeEnum.kPartDocumentObject), False)
+    
+    ' Definir el componente derivado apuntando al ensamblaje original
+    Dim oDerivedAssyDef As Inventor.DerivedAssemblyDefinition
+    oDerivedAssyDef = oNewPartDoc.ComponentDefinition.ReferenceComponents.DerivedAssemblyComponents.CreateDefinition(assyPath)
+    
+    ' Configurar opciones de simplificación (Equivalente a Create Simplified Part -> Single Solid Body)
+    oDerivedAssyDef.DeriveStyle = DerivedComponentStyleEnum.kDeriveAsSingleBodyNoSeams
+    
+    ' Agregar la definición al nuevo documento
+    oNewPartDoc.ComponentDefinition.ReferenceComponents.DerivedAssemblyComponents.Add(oDerivedAssyDef)
+    
+    ' Guardar la nueva pieza y cerrar el documento en segundo plano
+    oNewPartDoc.SaveAs(newFileName, False)
+    oNewPartDoc.Close(True)
+    
+    ' Actualizar estado
+    oApp.StatusBarText = "Guardado: " & baseName & "_" & index & ".ipt (" & i & " de " & n & ")"
+Next
+
+' Restablecer estado y notificar al usuario
+oApp.StatusBarText = "Listo"
+MessageBox.Show("Se han generado " & n & " piezas correctamente en la siguiente ruta:" & vbCrLf & vbCrLf & folderPath, "Proceso Completado", MessageBoxButtons.OK, MessageBoxIcon.Information)
