@@ -24,9 +24,9 @@
 1. Open your main assembly in Autodesk Inventor.
 2. Go to the **Manage** tab on the ribbon.
 3. In the iLogic panel, click on **Add Rule**.
-4. Assign a name to the rule (for example: `Generate_Simplified_Parts`).
+4. Assign a name to the rule (for example: `Massive_Simplifier`).
 5. Copy the script's source code and paste it into the editor.
-6. Click **Save & Close**.
+6. Click **Save & Run**.
 
 ---
 
