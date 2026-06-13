@@ -1,27 +1,52 @@
-# Script iLogic: Demote Masivo de Piezas a Subensamblajes
+# 📄 MassiveDenote (Multiple Part Denoter for iLogic)
 
-## Descripción
-Este script de iLogic para Autodesk Inventor automatiza la operación de "Demote" (degradar) para múltiples piezas en un solo paso. Busca todas las piezas (Parts) individuales ubicadas en el primer nivel del árbol del ensamblaje activo, crea un nuevo documento de subensamblaje para cada una, coloca la pieza en su interior respetando el origen y sustituye la ocurrencia en el ensamblaje principal.
+> ** An automation iLogic script for **Autodesk Inventor** designed to mass "demote" individual part components from the root of an assembly document into newly generated individual subassemblies.**
 
-## Requisitos Previos
-* Autodesk Inventor (probado en versiones recientes).
-* Un ensamblaje (`.iam`) activo y abierto.
-* **Crucial:** El ensamblaje principal debe estar guardado previamente. El script utiliza la ruta de este archivo principal para guardar los nuevos subensamblajes generados en el mismo directorio.
+## Overview
 
-## Instrucciones de Uso
-1. Abre tu ensamblaje en Autodesk Inventor.
-2. Ve a la pestaña **Administrar** (Manage) y abre el panel de **iLogic**.
-3. Haz clic derecho en la pestaña **Reglas** (Rules) del navegador de iLogic y selecciona **Añadir Regla** (Add Rule).
-4. Asigna un nombre a la regla (por ejemplo, `Demote_Masivo`).
-5. Pega el código del script en el editor de texto de iLogic.
-6. Haz clic en **Guardar y Ejecutar** (Save & Run).
+In Autodesk Inventor, structuring a complex Bill of Materials (BOM) often requires grouping separate parts into individual subassemblies. Doing this manually ("Demote" feature) for dozens or hundreds of components is time-consuming and error-prone. 
 
-## Consideraciones Importantes
-* **Pérdida de Restricciones (Constraints):** Al reemplazar ocurrencias vía la API de Inventor, las restricciones de ensamblaje que tenía la pieza original se pierden debido al cambio de topología. El script fija (*Ground*) las piezas automáticamente dentro de sus nuevos subensamblajes para asegurar estabilidad.
-* **Posicionamiento Geométrico:** La matriz de transformación original se hereda de manera exacta. Cada pieza mantendrá su misma posición visual y de coordenadas en el espacio tridimensional del ensamblaje principal.
-* **Dimensiones y Escalas:** La geometría física del modelo se mantiene completamente intacta. El proceso de empaquetado no altera la escala, respetando con precisión el sistema de unidades original con el que se modeló la pieza (ya sean dimensiones precisas en milímetros (mm) o en pulgadas (inches)).
-* **Archivos Generados:** Los nuevos ensamblajes se nombrarán usando el formato `[NombreDeLaPieza]_Demoted_[Número].iam` para evitar la sobrescritura accidental de archivos existentes.
+**MassiveDenote** automates this workflow by scanning the active top-level assembly, filtering for single part documents (`.ipt`), creating a new subassembly (`.iam`) for each one in the background, transferring the part into it, grounding it to maintain spatial integrity, and replacing the original root component seamlessly.
 
-## Limitaciones
-* Actualmente, el script solo actúa sobre componentes del **primer nivel** del árbol (raíz del ensamblaje principal).
-* Solamente degrada documentos de piezas (`.ipt`), ignorando los subensamblajes existentes.
+## ✨ Key Features
+
+- **Pre-execution Validation:** Ensures the main assembly is saved to establish a valid base directory paths for new files.
+- **Isolated Inventory Collection:** Scans and collects target components into an isolated memory list before modification, preventing collection corruption errors during database writes.
+- **Background Instantiation:** Creates new `.iam` files invisibly in memory to prevent UI flicker and maximize processing speed.
+- **Spatial Alignment & Grounding:** Positions the part within the new subassembly using an identity matrix, preserving its exact absolute coordinates. The component is automatically set to `Grounded = True` so it remains locked in place.
+- **Targeted Substitution:** Executes a localized replacement (`oOcc.Replace(..., False)`) ensuring only the specific instance evaluated is modified, without altering other instances of the same part globally unless intended.
+
+---
+
+## 🧩 Prerequisites
+
+* **Software:** Autodesk Inventor (Compatible with versions that support iLogic and the `System.Windows.Forms` library).
+* **File type:** The active document **must** be an assembly (`.iam`).
+* **File status:** The original assembly must be **saved** to your local drive or network before running the script.
+
+---
+
+## 🛠️ Installation and Setup
+
+1. Open your main assembly in Autodesk Inventor.
+2. Open the iLogic Browser (View tab > Windows panel > User Interface > iLogic Log/Browser).
+3. Right-click in the Rules or External Rules tab and select Add Rule.
+4. Name the rule MassiveDenote.
+5. Paste the source code above into the iLogic code editor window.
+6. Click **Save & Run**.
+
+---
+
+## How It Works
+
+1. **Path Determination:** The script identifies the folder path of the active assembly document.
+2. **Filtering:** Iterates through first-level occurrences and isolates those matching `DocumentTypeEnum.kPartDocumentObject`.
+3. **Subassembly Creation:** For each isolated part, a new assembly file named after the part (suffixed with `_Demoted_[count].iam`) is generated in the root folder.
+4. **Placement:** The original part file is inserted at the exact relative coordinate origin (e.g., maintaining any original offset like `50 mm / 1.97 in`) and grounded.
+5. **Component Replacement:** The root-level part instance is replaced by the newly created subassembly instance.
+
+## 🤝 Contributing
+Pull Requests are welcome! For major changes, please open an issue first to discuss what you would like to change.
+
+## 📄 License
+This project is licensed under the MIT License. See the LICENSE file for more details.
