@@ -1,0 +1,111 @@
+' iLogic Script: Automate Body Extraction to Derived Parts
+' Description: Iterates through all solid bodies in the active master .ipt 
+' and exports each one as a distinct, derived .ipt file.
+' Includes user prompts for output directory and custom naming pattern.
+
+Sub Main()
+    Dim oApp As Inventor.Application = ThisApplication
+    Dim oDoc As PartDocument = TryCast(oApp.ActiveDocument, PartDocument)
+
+    ' Validate active document type
+    If oDoc Is Nothing Then
+        Logger.Error("Active document is not a Part Document.")
+        MessageBox.Show("Este script debe ejecutarse dentro de un archivo de pieza (.ipt).", "Perficom - Error de Entorno")
+        Exit Sub
+    End If
+
+    Dim oCompDef As PartComponentDefinition = oDoc.ComponentDefinition
+    Dim oBodies As SurfaceBodies = oCompDef.SurfaceBodies
+
+    ' Check if there are solid bodies to process
+    If oBodies.Count = 0 Then
+        MessageBox.Show("No se encontraron cuerpos sólidos en este modelo.", "Información")
+        Exit Sub
+    End If
+
+    ' Ensure the master file is saved to resolve derivation paths correctly
+    If oDoc.FullFileName = "" Then
+        MessageBox.Show("Por favor, guarda el archivo maestro antes de ejecutar la extracción.", "Requiere Guardar")
+        Exit Sub
+    End If
+
+    Dim masterPath As String = System.IO.Path.GetDirectoryName(oDoc.FullFileName)
+    
+    ' --- NEW: Prompt User for Output Directory ---
+    Dim exportFolder As String = ""
+    Dim folderBrowser As New System.Windows.Forms.FolderBrowserDialog()
+    folderBrowser.Description = "Selecciona el directorio de salida para los cuerpos derivados:"
+    folderBrowser.SelectedPath = masterPath
+    folderBrowser.ShowNewFolderButton = True
+
+    If folderBrowser.ShowDialog() = System.Windows.Forms.DialogResult.OK Then
+        exportFolder = folderBrowser.SelectedPath
+    Else
+        Logger.Info("User cancelled folder selection.")
+        Exit Sub ' Abort if user cancels
+    End If
+
+    ' --- NEW: Prompt User for Naming Pattern ---
+    Dim namingPattern As String = InputBox("Define el patrón de nombrado para los archivos .ipt." & vbCrLf & vbCrLf & _
+        "Variables disponibles:" & vbCrLf & _
+        "<Master> = Nombre del archivo original" & vbCrLf & _
+        "<Body> = Nombre del cuerpo sólido", _
+        "Patrón de Nombrado", "<Master>_<Body>")
+        
+    If String.IsNullOrWhiteSpace(namingPattern) Then
+        Logger.Info("User cancelled naming pattern input.")
+        Exit Sub ' Abort if user cancels
+    End If
+
+    ' Initialize progress bar
+    Dim progress As Inventor.ProgressBar = oApp.CreateProgressBar(False, oBodies.Count, "Exportando cuerpos sólidos...")
+    Dim processedCount As Integer = 0
+
+    ' Iterate through each solid body
+    For Each oBody As SurfaceBody In oBodies
+        progress.Message = "Procesando: " & oBody.Name
+        
+        Dim oNewDoc As PartDocument = oApp.Documents.Add(DocumentTypeEnum.kPartDocumentObject, , False)
+        Dim oNewCompDef As PartComponentDefinition = oNewDoc.ComponentDefinition
+
+        Dim oDerivedDef As DerivedPartUniformScaleDef = oNewCompDef.ReferenceComponents.DerivedPartComponents.CreateUniformScaleDef(oDoc.FullFileName)
+        
+        ' --- BUG FIX: Iterate through solids to isolate the target body ---
+        For Each oSolidEntity As DerivedPartEntity In oDerivedDef.Solids
+            If oSolidEntity.ReferencedEntity.Name = oBody.Name Then
+                oSolidEntity.IncludeEntity = True
+            Else
+                oSolidEntity.IncludeEntity = False
+            End If
+        Next
+
+        Try
+            ' Apply derivation
+            oNewCompDef.ReferenceComponents.DerivedPartComponents.Add(oDerivedDef)
+            
+            ' Sanitize body name and get master name
+            Dim cleanBodyName As String = System.Text.RegularExpressions.Regex.Replace(oBody.Name, "[^A-Za-z0-9_\-]", "_")
+            Dim masterName As String = System.IO.Path.GetFileNameWithoutExtension(oDoc.DisplayName)
+            
+            ' Apply user-defined naming pattern
+            Dim fileName As String = namingPattern.Replace("<Master>", masterName).Replace("<Body>", cleanBodyName)
+            Dim newFilePath As String = System.IO.Path.Combine(exportFolder, fileName & ".ipt")
+            
+            ' Save and close
+            oNewDoc.SaveAs(newFilePath, False)
+            Logger.Info("Successfully derived and saved: " & newFilePath)
+            processedCount += 1
+            
+        Catch ex As Exception
+            Logger.Error("Failed to derive or save body: " & oBody.Name & ". Exception: " & ex.Message)
+        Finally
+            oNewDoc.Close(True)
+        End Try
+        
+        progress.UpdateProgress()
+    Next
+
+    progress.Close()
+    
+    MessageBox.Show("Pipeline completado. Se generaron " & processedCount & " archivos .ipt en:" & vbCrLf & vbCrLf & exportFolder, "Extracción Exitosa")
+End Sub
