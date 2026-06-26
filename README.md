@@ -66,6 +66,13 @@ Exports a structured and recursive list of all parts and subassemblies from an a
 
 ## 🤝 Contributing
 Pull Requests are welcome! For major changes, please open an issue first to discuss what you would like to change.
+---
 
 ## 📄 License
 This project is licensed under the MIT License. See the LICENSE file for more details.
+
+---
+
+## Development
+
+Developed and maintained by [![javilesm](https://img.shields.io/badge/github-javilesm-blue?logo=github)](https://javilesm.github.io)
