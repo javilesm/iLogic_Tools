@@ -1,0 +1,132 @@
+AddReference "System.Core"
+Imports System.IO
+Imports System.Collections.Generic
+
+Sub Main()
+    ' 1. Verificar que estemos en un documento de ensamble
+    Dim oDoc As Document = ThisApplication.ActiveDocument
+    If oDoc.DocumentType <> DocumentTypeEnum.kAssemblyDocumentObject Then
+        MsgBox("Por favor, ejecuta esta regla desde un archivo de ensamble (.iam).", vbCritical, "Error de Tipo de Archivo")
+        Return
+    End If
+
+    ' 2. Crear y configurar la aplicación de Excel de forma directa
+    Dim excelApp As Object
+    Try
+        excelApp = CreateObject("Excel.Application")
+    Catch ex_start As Exception
+        MsgBox("No se pudo iniciar Excel. Asegúrate de tener Microsoft Excel instalado.", vbCritical, "Error")
+        Return
+    End Try
+
+    excelApp.Visible = False ' Mantener oculto en segundo plano mientras trabaja
+    Dim wb As Object = excelApp.Workbooks.Add
+    Dim ws As Object = wb.Sheets(1)
+    ws.Name = "BOM de Componentes"
+
+    ' 3. Definir y estilar los Encabezados de las Columnas
+    Dim headers() As String = {"ID", "PARTE (OCURRENCIA)", "ENSAMBLE PADRE", "ENSAMBLE ABUELO", "NÚMERO DE PARTE", "MATERIAL", "MASA (kg)", "DESCRIPCIÓN", "RUTA COMPLETA"}
+    
+    For i As Integer = 0 To headers.Length - 1
+        ws.Cells(1, i + 1).Value = headers(i)
+        ws.Cells(1, i + 1).Font.Bold = True
+        ws.Cells(1, i + 1).Interior.Color = RGB(31, 73, 125)
+        ws.Cells(1, i + 1).Font.Color = RGB(255, 255, 255)
+    Next
+
+    ' 4. Inicializar variables de control y rastreo
+    Dim consecutivo As Integer = 1
+    Dim oAsmCompDef As AssemblyComponentDefinition = oDoc.ComponentDefinition
+    
+    ' Lista para simular el árbol genealógico del ensamble durante la recursión
+    Dim ancestros As New List(Of String)
+    ancestros.Add(oDoc.DisplayName)
+
+    ' 5. Ejecutar la rutina recursiva
+    ProcesarOcurrenciasExcel(oAsmCompDef.Occurrences, ws, consecutivo, ancestros)
+
+    ' 6. Autoajustar el ancho de las columnas y activar las cuadrículas visibles
+    ws.Columns.AutoFit()
+    excelApp.ActiveWindow.DisplayGridlines = True
+
+    ' 7. Guardar el archivo en la misma ruta del ensamble
+    Dim outputPath As String = ThisDoc.Path & "\Listado_Excel_" & ThisDoc.FileName(False) & ".xlsx"
+    
+    Try
+        excelApp.DisplayAlerts = False ' Sobrescribir si ya existe sin preguntar
+        wb.SaveAs(outputPath)
+        excelApp.Quit()
+        MsgBox("¡Exportación Exitosa!" & vbCrLf & vbCrLf & "Archivo guardado en: " & vbCrLf & outputPath, vbInformation, "iLogic Excel")
+    Catch ex_save As Exception
+        excelApp.Quit()
+        MsgBox("Error al guardar el Excel. Verifica que el archivo no esté abierto por otro proceso." & vbCrLf & ex_save.Message, vbCritical, "Error de Guardado")
+    End Try
+End Sub
+
+' Subrutina recursiva para recorrer la estructura e ir llenando las celdas de Excel
+Sub ProcesarOcurrenciasExcel(occurrences As ComponentOccurrences, ws As Object, ByRef id As Integer, ByRef ancestros As List(Of String))
+    Dim oOcc As ComponentOccurrence
+    
+    For Each oOcc In occurrences
+        ' Omitir si la parte está suprimida
+        If oOcc.Suppressed Then Continue For
+
+        Dim fila As Integer = id + 1
+
+        ' Rastrear ancestros (Padre y Abuelo) basándonos en la lista de jerarquía
+        Dim ensamblePadre As String = "N/A"
+        Dim ensambleAbuelo As String = "N/A"
+        
+        If ancestros.Count >= 1 Then
+            ensamblePadre = ancestros(ancestros.Count - 1)
+        End If
+        If ancestros.Count >= 2 Then
+            ensambleAbuelo = ancestros(ancestros.Count - 2)
+        End If
+
+        Dim partNumber As String = ""
+        Dim material As String = ""
+        Dim masa As Double = 0
+        Dim descripcion As String = ""
+        Dim rutaCompleta As String = "Virtual / No Guardado"
+
+        Try
+            Dim refDoc As Document = oOcc.Definition.Document
+            rutaCompleta = refDoc.FullFileName
+            
+            partNumber = refDoc.PropertySets.Item("Design Tracking Properties").Item("Part Number").Value
+            descripcion = refDoc.PropertySets.Item("Design Tracking Properties").Item("Description").Value
+            
+            If refDoc.DocumentType = DocumentTypeEnum.kPartDocumentObject Then
+                material = refDoc.PropertySets.Item("Design Tracking Properties").Item("Material").Value
+            Else
+                material = "N/A (Ensamble)"
+            End If
+            
+            Dim oMassProps As MassProperties = oOcc.Definition.MassProperties
+            masa = Round(oMassProps.Mass, 4)
+        Catch
+            ' Se omite la declaración de variable aquí para evitar conflictos
+        End Try
+
+        ' Escribir directamente en las celdas de Excel correspondientes
+        ws.Cells(fila, 1).Value = id
+        ws.Cells(fila, 2).Value = oOcc.Name 
+        ws.Cells(fila, 3).Value = ensamblePadre
+        ws.Cells(fila, 4).Value = ensambleAbuelo
+        ws.Cells(fila, 5).Value = partNumber
+        ws.Cells(fila, 6).Value = material
+        ws.Cells(fila, 7).Value = masa
+        ws.Cells(fila, 8).Value = descripcion
+        ws.Cells(fila, 9).Value = rutaCompleta
+
+        id += 1
+
+        ' Si este componente actual es a su vez un subensamble, profundizamos recursivamente
+        If oOcc.DefinitionDocumentType = DocumentTypeEnum.kAssemblyDocumentObject Then
+            ancestros.Add(oOcc.Name)
+            ProcesarOcurrenciasExcel(oOcc.SubOccurrences, ws, id, ancestros)
+            ancestros.RemoveAt(ancestros.Count - 1)
+        End If
+    Next
+End Sub
